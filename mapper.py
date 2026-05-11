@@ -112,6 +112,9 @@ class Mapper:
         # You can add obstacles here later.
         self.obstacles = []
 
+        # Robot position history for debug plotting.
+        self.robot_pos = []
+
         # Future loading dock memory.
         # This can come from color segmentation later.
         self.loading_dock = None
@@ -433,7 +436,7 @@ class Mapper:
         if hasattr(self, "robot_pos") and self.robot_pos:
             rx = [pos[0] - ox for pos in self.robot_pos]
             ry = [pos[1] - oy for pos in self.robot_pos]
-            ax.plot(rx, ry, color="gray", linewidth=0.2, alpha=0.3, label="Robot Path")
+            ax.plot(rx, ry, color="gray", linewidth=1, alpha=0.5, label="Robot Path")
         
         # Plot loading dock.
         if self.loading_dock is not None:
