@@ -232,7 +232,8 @@ class AprilTagDetector:
 # ============================================================
 tag_map = {}
 tower_map = {}
-
+seen_tags = []
+robot_path = []  # (x, y, yaw_deg) recorded at each scan stop
 
 
 
@@ -756,6 +757,10 @@ def scan_stationary(ep_camera, tag_detector, yolo_model, duration=DEFAULT_SCAN_D
     print(f"       duration={duration:.2f}s")
     print("       robot is stopped, mapping enabled")
 
+    rx, ry, ryaw = rel_pose()
+    robot_path.append((rx, ry, ryaw))
+    print(f"[PATH] scan #{len(robot_path)}: x={rx:.3f}, y={ry:.3f}, yaw={ryaw:.1f}")
+
 
     start_time = time.time()
 
@@ -796,6 +801,10 @@ def scan_stationary(ep_camera, tag_detector, yolo_model, duration=DEFAULT_SCAN_D
 
             tag_id = int(detection.tag_id)
 
+            if tag_id in seen_tags:
+                # Skip this tag entirely because it's already in our list
+                print(f"[SKIP TAG] id={tag_id} already seen. Skipping detection.")
+                continue
 
             tag_x, tag_y, tag_dist, tag_angle_deg, tag_bias_px = estimate_marker_world_position(
                 detection
@@ -819,6 +828,10 @@ def scan_stationary(ep_camera, tag_detector, yolo_model, duration=DEFAULT_SCAN_D
                 tag_angle_deg=tag_angle_deg,
                 tag_bias_px=tag_bias_px
             )
+
+            seen_tags.append(tag_id)
+            print(f"Tag {tag_id} added to seen list."
+                  f" [SEEN TAGS] {seen_tags}")
 
 
         # YOLO tower mapping
@@ -998,23 +1011,27 @@ def run_mapping_route(ep_chassis, ep_camera, tag_detector, yolo_model):
     print("\n[ROUTE] Starting Project 3 mapping route")
 
 
-    if not scan_stationary(ep_camera, tag_detector, yolo_model, duration=2.0, label="scan at start"):
-        return
-
-
     # --------------------------------------------------------
     # Example route.
     # Tune these to your arena.
     # --------------------------------------------------------
 
-
-    forward(ep_chassis, 1.5)
-    if not scan_stationary(ep_camera, tag_detector, yolo_model, duration=1.5, label="scan after forward 1.5m"):
-        return
+    forward(ep_chassis, 1.1)
     
-    turn(ep_chassis, 90)
-    if not scan_stationary(ep_camera, tag_detector, yolo_model, duration=1.5, label="scan after turn +30"):
+    for i in range(9):
+        turn(ep_chassis, 45)
+        if not scan_stationary(ep_camera, tag_detector, yolo_model, duration=1.5, label="scan after turn +30"):
+            return
+        
+    forward(ep_chassis, 1.3)
+    if not scan_stationary(ep_camera, tag_detector, yolo_model, duration=1.5, label="scan after forward 0.80m"):    
         return
+
+    for i in range(8):
+        turn(ep_chassis, 45)
+        if not scan_stationary(ep_camera, tag_detector, yolo_model, duration=1.5, label="scan after turn +30"):
+            return
+    
     
 
 
@@ -1106,6 +1123,20 @@ def save_map_plot(filename=MAP_PLOT_FILE):
     ax.scatter(robot_x, robot_y, marker="o", s=100, color="gray", label="Robot final")
     ax.text(robot_x + 0.03, robot_y + 0.03, "Robot", fontsize=8)
 
+    # Plot robot path at each scan stop
+    if robot_path:
+        xs = [p[0] for p in robot_path]
+        ys = [p[1] for p in robot_path]
+        ax.plot(xs, ys, color="steelblue", linewidth=1.0, zorder=2)
+        for i, (px, py, pyaw) in enumerate(robot_path):
+            ax.scatter(px, py, marker="o", s=40, color="steelblue", zorder=3)
+            ax.text(px + 0.03, py - 0.06, str(i + 1), fontsize=7, color="steelblue")
+            arrow_len = 0.12
+            dx = arrow_len * math.cos(math.radians(pyaw))
+            dy = arrow_len * math.sin(math.radians(pyaw))
+            ax.annotate("", xy=(px + dx, py + dy), xytext=(px, py),
+                        arrowprops=dict(arrowstyle="->", color="steelblue", lw=1.2),
+                        zorder=4)
 
     # Plot tags
     for tag_key, data in tag_map.items():
