@@ -59,7 +59,7 @@ class AprilTagDetector:
         return results
     
     # ----------- TAG THRESHOLDS ---------------------
-TAG_Y_THRESH = 150    # Adjust based on how close you want to get
+TAG_Y_THRESH = 165    # Adjust based on how close you want to get
 CENTER_THRESH = 0.06  # Deadzone for centering
 # ------------------------------------------------
 
@@ -151,7 +151,7 @@ def main():
     try:
         # approach block using YOLO
         reset_arm(ep_robot)
-        detect_tag_loop(ep_chassis, ep_camera, detector, target_id=11) 
+        detect_tag_loop(ep_chassis, ep_camera, detector, target_id=34) 
         
     finally:
         ep_chassis.drive_speed(x=0, y=0, z=0)

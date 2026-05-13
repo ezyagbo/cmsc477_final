@@ -81,6 +81,7 @@ def explore_until_brick(ep_chassis, ep_camera, controller, detector):
             print("[explore] Quit pressed.")
             return
         
+
         if debug is not None:
             cv2.imshow("Explore", debug)
         
@@ -95,11 +96,17 @@ def explore_until_tag(ep_chassis, ep_camera, controller, detector, target_ids):
     
     :param target_ids: List or tuple of IDs to look for (e.g., [19, 45])
     """
-    print(f"\n[explore] Exploring — looking for AprilTags: {target_ids}...")
+    print(f"\n[explore] Exploring with ±45° sweep — looking for AprilTags: {target_ids}...")
+
+    SWEEP_SPEED = 15    # deg/s
+    SWEEP_MAX   = 45.0  # degrees each side
+
+    sweep_angle = 0.0   # accumulated heading offset from straight-ahead
+    sweep_dir   = 1     # +1 = sweeping left, -1 = sweeping right
+    last_t      = time.time()
 
     while True:
         try:
-            # Get the latest frame from the camera
             frame = ep_camera.read_cv2_image(strategy="newest", timeout=0.5)
         except Empty:
             continue
@@ -110,30 +117,39 @@ def explore_until_tag(ep_chassis, ep_camera, controller, detector, target_ids):
         if frame is None:
             continue
 
-        # Use the detector to find AprilTags in the current frame
-        # (Assuming detector.find_tags returns objects with an .id property)
-        tags = detector.find_tags(frame)
-        
-        
-        # Filter for tags that match our target list
+        tags             = detector.find_tags(frame)
         detected_targets = [t for t in tags if t.tag_id in target_ids]
 
         if detected_targets:
-            # Pick the "best" tag based on size (center distance or area)
-            # Here we just take the first one found or you could use area/width
             target = detected_targets[0]
             print(f"[explore] Target tag {target.tag_id} detected!")
-            
-            # Stop the robot immediately
             ep_chassis.drive_speed(x=0, y=0, z=0)
             print("[explore] Tag found — switching to next behavior.")
-            return target.tag_id  # Return the ID found so you know which one triggered it
+            return target.tag_id
 
-        # If no tag is seen, continue the exploration movement
         state, x_spd, y_spd, z_spd, debug = controller.update(frame)
+
+        now    = time.time()
+        dt     = now - last_t
+        last_t = now
+
+        if state == "EXPLORE":
+            # Accumulate sweep angle and flip direction at ±45°
+            sweep_angle += SWEEP_SPEED * sweep_dir * dt
+            if sweep_angle >= SWEEP_MAX:
+                sweep_angle = SWEEP_MAX
+                sweep_dir   = -1
+            elif sweep_angle <= -SWEEP_MAX:
+                sweep_angle = -SWEEP_MAX
+                sweep_dir   = 1
+            z_spd = SWEEP_SPEED * sweep_dir
+        else:
+            # Obstacle avoidance has control — reset sweep so it doesn't fight back
+            sweep_angle = 0.0
+            sweep_dir   = 1
+
         ep_chassis.drive_speed(x=x_spd, y=y_spd, z=z_spd, timeout=0.1)
 
-        # Visual feedback
         cv2.imshow("Explore", debug)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             ep_chassis.drive_speed(x=0, y=0, z=0)
@@ -149,8 +165,14 @@ def turn_around(ep_chassis,speed=15):
 
     return
 
+def turn_left(ep_chassis,speed=15):
+    """
+    Helper function to turn the robot 180.
+    """
+    ep_chassis.move(x=0, y=0, z=45, z_speed=speed).wait_for_completed()
+    ep_chassis.drive_speed(x=0, y=0, z=0)
 
-
+    return
 
 
 # ============================================================
@@ -181,7 +203,7 @@ def main():
         reset_arm(ep_robot)
 
         # # ── 2. Explore until a large_brick is seen ─────────────────────
-        # explore_until_brick(ep_chassis, ep_camera, controller, detector)
+        explore_until_brick(ep_chassis, ep_camera, controller, detector)
 
         # # ── 3. Approach and pick up ────────────────────────────────────
         # print("\n[pick] Centering on and approaching large_brick...")
@@ -190,9 +212,11 @@ def main():
         #     detector, target_class="large_brick"
         # )
         # pick_up(ep_robot)
-        # turn_around(ep_chassis)
-        # explore_until_tag(ep_chassis, ep_camera, controller, tag_detector, target_ids=[21])
-        # detect_tag_loop(ep_chassis, ep_camera, tag_detector, target_id=21)
+        turn_left(ep_chassis)
+        explore_until_tag(ep_chassis, ep_camera, controller, tag_detector, target_ids=[34])
+        detect_tag_loop(ep_chassis, ep_camera, tag_detector, target_id=(34))
+        time.sleep(6)
+
         # reset_arm(ep_robot)
 
         # ── 4. Deliver to dropoff tag ──────────────────────────────────

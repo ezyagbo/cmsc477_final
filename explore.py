@@ -33,7 +33,9 @@ SMALL_GOALS = [41, 38]
 CHARGING = [10, 8]
 APRIL_TAG_DIST = 0.4
 IR_DISTANCE_THRESHOLD = 0.4   # meters — back away if IR sees anything closer
-BOX_HEIGHT_THRESHOLD  = 0.8  # box bbox height / frame height → trigger avoidance
+BOX_HEIGHT_THRESHOLD   = 0.8   # box bbox height / frame height → trigger avoidance (close)
+BLOCK_HEIGHT_THRESHOLD = 0.4  # trigger block avoidance at ~1 m distance (far)
+BLOCK_CLASSES = {"large_brick", "small_brick", "large brick", "small brick"}
 
 # ── Vision helpers ──────────────────────────────────────────────────────
 
@@ -112,6 +114,43 @@ def detect_box_obstacle(frame, model):
     bias = box_center_x - (w / 2.0)  # positive → box on right
 
     print(f"[YOLO] box detected (h_ratio={best_height/h:.2f}), bias={bias:.1f}")
+    return True, bias
+
+
+def detect_block_obstacle(frame, model):
+    """
+    Return (detected, bias) for the nearest brick/block in the frame.
+    Uses a much lower height threshold than detect_box_obstacle so the
+    robot starts turning away while the block is still far off.
+    """
+    if model is None:
+        return False, 0.0
+
+    results = model(frame, verbose=False)
+    h, w = frame.shape[:2]
+
+    best_box    = None
+    best_height = 0.0
+
+    for result in results:
+        names = result.names
+        for box in result.boxes:
+            cls_id     = int(box.cls[0])
+            class_name = names.get(cls_id, "").strip().lower()
+            if class_name not in BLOCK_CLASSES:
+                continue
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+            box_h = y2 - y1
+            if box_h > best_height:
+                best_height = box_h
+                best_box    = (x1, y1, x2, y2)
+
+    if best_box is None or (best_height / h) < BLOCK_HEIGHT_THRESHOLD:
+        return False, 0.0
+
+    x1, y1, x2, y2 = best_box
+    bias = ((x1 + x2) / 2.0) - (w / 2.0)  # positive → block on right
+    print(f"[YOLO BLOCK] block detected (h_ratio={best_height/h:.2f}), bias={bias:.1f}")
     return True, bias
 
 
@@ -216,8 +255,9 @@ class ObstacleController:
        EP drive_speed axes: x = forward/back, y = left/right, z = rotation (deg/s)
        """
        error, bias = compute_boundary_error(frame)
-       tag_detected, tag_bias = detect_apriltag_obstacle(frame)
-       box_detected, box_bias = detect_box_obstacle(frame, self._yolo_model)
+       tag_detected,   tag_bias   = detect_apriltag_obstacle(frame)
+       box_detected,   box_bias   = detect_box_obstacle(frame, self._yolo_model)
+       block_detected, block_bias = detect_block_obstacle(frame, self._yolo_model)
        # ir_dist = self.get_ir_distance()
 
        # # priority 1: IR obstacle within threshold — reverse away
@@ -225,11 +265,17 @@ class ObstacleController:
        #     print(f"[IR] obstacle at {ir_dist:.3f} m — backing up")
        #     self.state = "BACKUP"
 
-       # priority 1: avoid YOLO-detected boxes
+       # priority 1: box very close
        if box_detected:
            print(f"[YOLO] box avoidance — turning {'left' if box_bias > 0 else 'right'}")
            self.state          = "TURN"
            self.turn_direction = -1 if box_bias > 0 else 1
+
+       # priority 2: block detected far away — turn away early
+       elif block_detected:
+           print(f"[YOLO BLOCK] block avoidance — turning {'left' if block_bias > 0 else 'right'}")
+           self.state          = "TURN"
+           self.turn_direction = -1 if block_bias > 0 else 1
 
        # priority 3: avoid april tags
        elif tag_detected:
