@@ -7,7 +7,6 @@ from queue import Empty
 import robomaster
 from robomaster import robot
 from robomaster import camera
-from explore import main as explore_main
 from reset_arm import reset_arm
 
 
@@ -190,12 +189,23 @@ def pick_up(ep_robot):
     ep_arm = ep_robot.robotic_arm
     gripper = ep_robot.gripper
 
+    print("[pickup] Raising arm before closing gripper")
+    action = ep_arm.moveto(210, 15)
+    start = time.time()
+
+    while not action.is_completed:
+        if time.time() - start > 5:
+            print("[arm] moveto timeout, stopping arm")
+            ep_arm.stop()
+            return False
+        time.sleep(0.05)
+
     print("[pickup] Closing gripper")
     gripper.close(power=50)
     time.sleep(1)
 
     print("[pickup] Lifting arm")
-    action = ep_arm.moveto(0, 0)
+    action = ep_arm.moveto(0, 50)
     start = time.time()
 
     while not action.is_completed:

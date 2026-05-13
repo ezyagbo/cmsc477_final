@@ -9,7 +9,7 @@ import time
 import threading
 from queue import Empty
 import pupil_apriltags
-from mapper import AprilTagDetector
+from approach_tag import AprilTagDetector
 
 # ─── Tuned HSV ranges from actual blue tape sample ─────────────────────
 BLUE_HSV_LOWER = np.array([100, 60,  80])
@@ -119,7 +119,7 @@ def detect_apriltag_obstacle(frame):
     K = np.array([[314, 0, 320], [0, 314, 180], [0, 0, 1]])  # Camera focal length and center pixel
     marker_size_m = 0.153
 
-    apriltag = AprilTagDetector(K, threads=2, marker_size_m=marker_size_m)
+    apriltag = AprilTagDetector()
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     detections = apriltag.find_tags(gray)
