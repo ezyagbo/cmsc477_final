@@ -73,25 +73,26 @@ def get_tag_measurements(tag, img_width):
 
 def detect_tag_loop(ep_chassis, ep_camera, tag_detector, target_id):
     """
-    Centers and approaches a specific AprilTag ID.
+    Centers and approaches a specific AprilTag ID or any ID from a list.
     """
+    target_ids = set(target_id) if hasattr(target_id, '__iter__') else {target_id}
     state = SEARCH
-    print(f"\n[tag-loop] Seeking Tag ID: {target_id}")
+    print(f"\n[tag-loop] Seeking Tag ID(s): {target_ids}")
 
     while state != STOP:
         try:
             img = ep_camera.read_cv2_image(strategy="newest", timeout=0.5)
         except Empty:
             continue
-        
+
         if img is None:
             continue
 
         # Detect tags
         tags = tag_detector.find_tags(img)
-        
+
         # Filter for our specific ID
-        target_tags = [t for t in tags if t.tag_id == target_id]
+        target_tags = [t for t in tags if t.tag_id in target_ids]
 
         if target_tags:
             # If multiple are seen, pick the one lowest in the frame (closest)
@@ -104,32 +105,31 @@ def detect_tag_loop(ep_chassis, ep_camera, tag_detector, target_id):
             if state == APPROACH:
                 # 1. Centering Priority
                 if abs(x_error) > CENTER_THRESH:
-                    # Scale turn speed based on error for smoother alignment
-                    turn_speed = 5 if x_error > 0 else -5  # tunable: rotate 5 degrees
+                    turn_speed = 5 if x_error > 0 else -5
                     ep_chassis.drive_speed(x=0, y=0, z=turn_speed)
-                
+
                 # 2. Forward Movement
                 elif tag_y < TAG_Y_THRESH:
                     print(f"[tag-loop] Centered. Moving closer... (y={tag_y:.0f})")
                     pulse_drive(ep_chassis, x=0.15, duration=0.15)
-                
+
                 # 3. Target Reached
                 else:
                     ep_chassis.drive_speed(x=0, y=0, z=0)
-                    print(f"[tag-loop] Reached Tag {target_id}!")
+                    print(f"[tag-loop] Reached Tag {list(target_ids)}!")
                     state = STOP
 
         # --- Visual Debugging ---
         for tag in tags:
             cx, cy = int(tag.center[0]), int(tag.center[1])
-            color = (0, 255, 0) if tag.tag_id == target_id else (0, 0, 255)
+            color = (0, 255, 0) if tag.tag_id in target_ids else (0, 0, 255)
             cv2.circle(img, (cx, cy), 8, color, -1)
             cv2.putText(img, f"ID: {tag.tag_id}", (cx - 20, cy - 20),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
         cv2.putText(img, f"STATE: {state}", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
         cv2.imshow("AprilTag Tracking", img)
-        
+
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 

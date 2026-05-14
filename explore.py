@@ -154,14 +154,18 @@ def detect_block_obstacle(frame, model):
     return True, bias
 
 
-def detect_apriltag_obstacle(frame):
-    K = np.array([[314, 0, 320], [0, 314, 180], [0, 0, 1]])  # Camera focal length and center pixel
-    marker_size_m = 0.153
-
+def detect_apriltag_obstacle(frame, ignore_ids=None):
     apriltag = AprilTagDetector()
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     detections = apriltag.find_tags(gray)
+
+    if not detections:
+        return False, 0.0
+
+    # Filter out tags we're intentionally approaching
+    if ignore_ids:
+        detections = [d for d in detections if d.tag_id not in ignore_ids]
 
     if not detections:
         return False, 0.0
@@ -176,11 +180,9 @@ def detect_apriltag_obstacle(frame):
     if tag_dist > APRIL_TAG_DIST:
         print(f"dist: {tag_dist}... no tag found")
         return False, 0
-    
-    frame_center_x = frame.shape[1] / 2.0
-    tag_center_x = tag.center[0]
 
-    bias = tag_center_x - frame_center_x  # positive means tag on right
+    frame_center_x = frame.shape[1] / 2.0
+    bias = tag.center[0] - frame_center_x
 
     print(f"dist: {tag_dist}... tag found. bias: {bias}")
     return True, bias

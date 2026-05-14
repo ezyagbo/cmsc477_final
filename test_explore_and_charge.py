@@ -19,9 +19,10 @@ from approach_and_pick_block import (
     YOLOBlockDetector,
     detect_block_loop,
     pick_up,
+    pick_up_small,
     reset_arm,
 )
-from tag_delivery import deliver_block, LARGE_BRICK_DROP_TAG
+
 from approach_tag import (
     AprilTagDetector,
     detect_tag_loop,
@@ -46,7 +47,7 @@ def explore_until_brick(ep_chassis, ep_camera, controller, detector):
     Run the ObstacleController explore loop and return as soon as a
     large_brick wide enough to be close is detected.
     """
-    print("\n[explore] Exploring — looking for large_brick...")
+    print("\n[explore] Exploring — looking for small_brick...")
 
     while True:
         try:
@@ -61,12 +62,12 @@ def explore_until_brick(ep_chassis, ep_camera, controller, detector):
             continue
 
         detections   = detector.find_blocks(frame)
-        large_bricks = [d for d in detections if d[5] == "large_brick"]
+        large_bricks = [d for d in detections if d[5] == "small_brick"]
 
         if large_bricks:
             best  = max(large_bricks, key=lambda d: (d[2] - d[0]))
             width = best[2] - best[0]
-            print(f"[explore] large_brick detected (width={width:.0f}px)")
+            print(f"[explore] small_brick detected (width={width:.0f}px)")
             if width >= BRICK_SEEN_MIN_WIDTH:
                 ep_chassis.drive_speed(x=0, y=0, z=0)
                 print("[explore] Brick close enough — switching to approach.")
@@ -160,6 +161,7 @@ def turn_around(ep_chassis,speed=15):
     """
     Helper function to turn the robot 180.
     """
+    ep_chassis.move(x=-.5, y=0, z=0, z_speed=speed).wait_for_completed()
     ep_chassis.move(x=0, y=0, z=180, z_speed=speed).wait_for_completed()
     ep_chassis.drive_speed(x=0, y=0, z=0)
 
@@ -169,10 +171,19 @@ def turn_left(ep_chassis,speed=15):
     """
     Helper function to turn the robot 180.
     """
-    ep_chassis.move(x=0, y=0, z=45, z_speed=speed).wait_for_completed()
+    ep_chassis.move(x=-.65, y=0, z=0, z_speed=speed).wait_for_completed()
+    ep_chassis.move(x=0, y=0, z=150, z_speed=speed).wait_for_completed()
     ep_chassis.drive_speed(x=0, y=0, z=0)
 
     return
+
+def charge_battery(ep_chassis, ep_camera, controller, tag_detector):
+    explore_until_tag(ep_chassis, ep_camera, controller, tag_detector, target_ids=[34, 38])
+    detect_tag_loop(ep_chassis, ep_camera, tag_detector, target_id=[34, 38])
+    time.sleep(6)
+
+    return
+
 
 
 # ============================================================
@@ -202,25 +213,51 @@ def main():
         #── 1. Prep arm ────────────────────────────────────────────────
         reset_arm(ep_robot)
 
-        # # ── 2. Explore until a large_brick is seen ─────────────────────
+        # explore_until_brick(ep_chassis, ep_camera, controller, detector)
+        #turn_left(ep_chassis)
+        # turn_around(ep_chassis)
+        charge_battery(ep_chassis, ep_camera, controller, tag_detector)
+
+          # ── 2. Explore until a small_brick is seen ─────────────────────
         explore_until_brick(ep_chassis, ep_camera, controller, detector)
 
-        # # ── 3. Approach and pick up ────────────────────────────────────
-        # print("\n[pick] Centering on and approaching large_brick...")
-        # detect_block_loop(
-        #     ep_robot, ep_chassis, ep_camera,
-        #     detector, target_class="large_brick"
-        # )
-        # pick_up(ep_robot)
-        turn_left(ep_chassis)
-        explore_until_tag(ep_chassis, ep_camera, controller, tag_detector, target_ids=[34])
-        detect_tag_loop(ep_chassis, ep_camera, tag_detector, target_id=(34))
-        time.sleep(6)
+        # ── 3. Approach and pick up ────────────────────────────────────
+        print("\n[pick] Centering on and approaching small_brick...")
+        detect_block_loop(
+            ep_robot, ep_chassis, ep_camera,
+            detector, target_class="small_brick"
+        )
+        pick_up_small(ep_robot)
+        turn_around(ep_chassis) #90 degrees
+        explore_until_tag(ep_chassis, ep_camera, controller, tag_detector, target_ids=[41, 11])
+        detect_tag_loop(ep_chassis, ep_camera, tag_detector, target_id=[41, 11])
+        reset_arm(ep_robot)
 
-        # reset_arm(ep_robot)
+        # # --- ROUND 2 -----------
+        print("\n[system] Round 1 complete. Press Enter or 'g' to start Round 2...")
+        while True:
+            key = input().strip().lower()
+            if key in ("", "g"):
+                break
 
-        # ── 4. Deliver to dropoff tag ──────────────────────────────────
-        
+        turn_around(ep_chassis)
+
+        charge_battery(ep_chassis, ep_camera, controller, tag_detector)
+
+          # ── 2. Explore until a small_brick is seen ─────────────────────
+        explore_until_brick(ep_chassis, ep_camera, controller, detector)
+
+        # ── 3. Approach and pick up ────────────────────────────────────
+        print("\n[pick] Centering on and approaching small_brick...")
+        detect_block_loop(
+            ep_robot, ep_chassis, ep_camera,
+            detector, target_class="small_brick"
+        )
+        pick_up_small(ep_robot)
+        turn_left(ep_chassis) #90 degrees 
+        explore_until_tag(ep_chassis, ep_camera, controller, tag_detector, target_ids=[41, 11])
+        detect_tag_loop(ep_chassis, ep_camera, tag_detector, target_id=[41, 11])
+        reset_arm(ep_robot)
 
     except KeyboardInterrupt:
         print("\n[system] Interrupted.")

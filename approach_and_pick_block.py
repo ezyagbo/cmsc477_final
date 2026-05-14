@@ -23,7 +23,7 @@ STOP = 2
 # ----------- BOTTOM_Y THRESHOLDS BY CLASS --------
 BOTTOM_Y_THRESH = {
     "large_brick": 345,
-    "small_brick": 335,
+    "small_brick": 342,
 }
 BOTTOM_Y_THRESH_DEFAULT = 249
 # -------------------------------------------------
@@ -99,6 +99,7 @@ def pulse_drive(ep_chassis, x=0, y=0, z=0, duration=0.05):
 # currently: is doesn't get close enough so i use move_closer()
 def detect_block_loop(ep_robot, ep_chassis, ep_camera, detector, target_class=None):
     state = SEARCH          # starting state is SEARCH
+    locked_cx = None        # center-x of the block we locked onto
 
     # ----------- WHAT YOU TUNE TO ADJUST ALIGNMENT ----------------
     CENTER_THRESH = 0.05        # how centered is centered enough
@@ -118,9 +119,15 @@ def detect_block_loop(ep_robot, ep_chassis, ep_camera, detector, target_class=No
             detections = [d for d in detections if d[5] == target_class]
 
         if len(detections) > 0: # if there are blocks found
-            # Pick closest block (largest box)
-            detections.sort(key=lambda d: (d[2] - d[0]), reverse=True)
-            detection = detections[0]
+            if locked_cx is None:
+                # First detection: lock onto highest-confidence block
+                detection = max(detections, key=lambda d: d[4])
+                locked_cx = (detection[0] + detection[2]) / 2.0
+                print(f"[lock] Locked onto block at cx={locked_cx:.0f} conf={detection[4]:.2f}")
+            else:
+                # Already locked: track whichever detection is closest to locked position
+                detection = min(detections, key=lambda d: abs((d[0] + d[2]) / 2.0 - locked_cx))
+                locked_cx = (detection[0] + detection[2]) / 2.0  # update to follow smoothly
 
             # get the x_error and bottom_y vlaues of the detected block
             x_error, bottom_y = get_block_measurements(
@@ -217,13 +224,36 @@ def pick_up(ep_robot):
     print("Pickup complete.")
     return
 
-# tunable: move closer after yolo approach
-# TO DO?: make this function tunable by the caller so you 
-# pass in the x and duration you want... similar to pulse_drive()
-def move_up(ep_robot):
-    ep_chassis = ep_robot.chassis
-    print("[move-up] moving up")
-    pulse_drive(ep_chassis, x=0.15, duration=1)
+def pick_up_small(ep_robot):
+    ep_arm = ep_robot.robotic_arm
+    gripper = ep_robot.gripper
+
+    print("[pickup] Raising arm before closing gripper")
+    action = ep_arm.moveto(210, -40)
+    start = time.time()
+
+    while not action.is_completed:
+        if time.time() - start > 5:
+            print("[arm] moveto timeout, stopping arm")
+            ep_arm.stop()
+            return False
+        time.sleep(0.05)
+
+    print("[pickup] Closing gripper")
+    gripper.close(power=50)
+    time.sleep(1)
+
+    print("[pickup] Lifting arm")
+    action = ep_arm.moveto(0, 0)
+    start = time.time()
+
+    while not action.is_completed:
+        if time.time() - start > 5:
+            print("[arm] moveto timeout, stopping arm")
+            ep_arm.stop()
+            return False
+        time.sleep(0.05)
+    print("Pickup complete.")
     return
 
 
