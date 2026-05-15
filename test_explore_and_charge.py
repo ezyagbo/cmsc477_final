@@ -172,7 +172,7 @@ def turn_left(ep_chassis,speed=15):
     Helper function to turn the robot 180.
     """
     ep_chassis.move(x=-.65, y=0, z=0, z_speed=speed).wait_for_completed()
-    ep_chassis.move(x=0, y=0, z=150, z_speed=speed).wait_for_completed()
+    ep_chassis.move(x=0, y=0, z=-170, z_speed=speed).wait_for_completed()
     ep_chassis.drive_speed(x=0, y=0, z=0)
 
     return
